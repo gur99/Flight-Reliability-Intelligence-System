@@ -1,35 +1,45 @@
 # Flight Reliability Intelligence System
 
-End-to-end Data Analytics portfolio project for U.S. flight reliability, built with SQL Server and Power BI.
+End-to-end Data Analytics portfolio project for U.S. flight reliability, built with Python, SQL Server, and Power BI.
 
 The system analyzes airlines, airports, routes, dates, and flight schedules to identify patterns in delays, on-time performance, cancellations, diversions, delay causes, and airline / airport / route reliability.
 
 ## Objective
 
-Build a professional analytics workflow using official flight-level data from the U.S. Bureau of Transportation Statistics (BTS), not a pre-built Kaggle dataset.
+Build a professional analytics workflow using official flight-level data from the U.S. Bureau of Transportation Statistics (BTS), rather than a pre-built Kaggle dataset.
 
-The work follows a realistic Business Intelligence development process: source files are loaded into SQL Server, cleaned in staging, modeled as a star schema, exposed through analytical SQL, and consumed in Power BI.
+The project follows a realistic Business Intelligence workflow:
+
+1. Extract official monthly BTS flight data.
+2. Clean, validate, and standardize the data with Python.
+3. Load the processed monthly files into SQL Server staging tables.
+4. Build a dimensional Star Schema.
+5. Validate the final Data Warehouse.
+6. Connect the analytical model to Power BI.
+7. Build DAX measures, KPIs, dashboards, and business insights.
 
 ## Architecture
 
 ```text
-Official Data Sources
+U.S. Bureau of Transportation Statistics
         ↓
-Raw Data Files
+12 Monthly Raw BTS CSV Files
+        ↓
+Python ETL
+        ↓
+Cleaning / Validation / Type Conversion
+        ↓
+12 Processed Monthly CSV Files
         ↓
 SQL Server
         ↓
-Raw Layer
-        ↓
-Staging Layer
-        ↓
-Data Cleaning & Transformation
+12 Monthly Staging Tables
         ↓
 Dimensional Model
         ↓
-Fact & Dimension Tables
+Dimension Tables + Fact Table
         ↓
-Analytical SQL Views
+Data Validation
         ↓
 Power BI
         ↓
@@ -40,93 +50,421 @@ Interactive Dashboards
 Business Insights
 ```
 
-SQL Server is organized by schema:
+## Technology Stack
+
+- Python
+- Pandas
+- SQL Server
+- T-SQL
+- Power BI
+- DAX
+- Git / GitHub
+
+## Responsibility Split
+
+### Python
+
+Python is responsible for the ETL process before the data reaches SQL Server:
+
+- Read the 12 original monthly BTS CSV files.
+- Combine the monthly data for transformation and validation.
+- Convert flight dates.
+- Convert BTS HHMM clock-time fields into valid time values.
+- Convert integer-like numerical fields into SQL-compatible integer values.
+- Validate the processed dataset.
+- Split the processed data back into monthly datasets.
+- Export 12 cleaned monthly CSV files.
+
+### SQL Server
+
+SQL Server is responsible for:
+
+- Creating the project database.
+- Creating the staging, dimension, fact, and analytics schemas.
+- Loading the 12 processed monthly CSV files.
+- Creating the dimensional model.
+- Generating surrogate keys.
+- Populating dimensions.
+- Populating the flight fact table.
+- Enforcing keys, relationships, and uniqueness constraints.
+- Running final Data Warehouse validation.
+
+### Power BI
+
+Power BI is responsible for:
+
+- Semantic modeling.
+- DAX measures.
+- KPIs.
+- Interactive reporting.
+- Reliability analysis.
+- Business insights.
+
+## SQL Server Schemas
 
 | Schema | Responsibility |
 | --- | --- |
-| `raw` | Source data as close as possible to the original BTS files |
-| `staging` | Cleaned, standardized, and correctly typed data |
+| `staging` | Landing layer for the cleaned Python ETL output |
 | `dim` | Analytical dimension tables |
-| `fact` | Analytical fact tables |
-| `analytics` | Reporting views and reusable SQL logic |
+| `fact` | Flight-level fact tables |
+| `analytics` | Reusable analytical SQL views and reporting logic |
+
+The project intentionally does not use a SQL Server `raw` schema.
+
+The original BTS data is retained in the file system, while Python performs the extraction, cleaning, validation, and type-conversion steps before SQL Server receives the data.
+
+## Data Source
+
+Primary source:
+
+**U.S. Bureau of Transportation Statistics (BTS) - Airline On-Time Performance Data**
+
+The project uses the complete 2025 calendar year.
+
+Original monthly source files:
+
+```text
+data/raw/bts/2025/2025_01.csv
+data/raw/bts/2025/2025_02.csv
+...
+data/raw/bts/2025/2025_12.csv
+```
+
+The source files are large and are not committed to Git.
+
+Official BTS field documentation is stored under:
+
+```text
+data/raw/bts/description/
+```
+
+## Python ETL
+
+The executable ETL process is implemented in:
+
+```text
+python/etl_flights.py
+```
+
+The development notebooks are used for investigation, profiling, validation, and transformation decisions.
+
+The Python ETL exports:
+
+```text
+2025_01_clean.csv
+2025_02_clean.csv
+...
+2025_12_clean.csv
+```
+
+The processed files contain 62 selected flight-level fields and are prepared for direct loading into SQL Server.
+
+### Important transformations
+
+Examples of transformations performed before SQL Server loading include:
+
+```text
+FL_DATE
+→ standardized flight date
+
+CRS_DEP_TIME
+DEP_TIME
+WHEELS_OFF
+WHEELS_ON
+CRS_ARR_TIME
+ARR_TIME
+→ BTS HHMM values converted to HH:MM
+
+Integer-like numerical fields
+→ exported without unnecessary decimal values
+```
+
+The SQL Server staging layer therefore receives already-cleaned and correctly formatted data.
+
+## Staging Layer
+
+SQL Server contains one staging table for each month:
+
+```text
+staging.Flights_2025_01
+staging.Flights_2025_02
+...
+staging.Flights_2025_12
+```
+
+All 12 tables share the same 62-column structure.
+
+The staging layer represents the validated output of the Python ETL process and serves as the source for the dimensional model.
 
 ## Dimensional Model
 
-The project uses a star schema:
+The analytical model uses a Star Schema.
 
-- `dim.Date`
-- `dim.Airline`
-- `dim.Airport`
-- `fact.Flights`
-
-`dim.Airport` is a role-playing dimension. `fact.Flights` references it as both Origin Airport and Destination Airport. A separate Route dimension is not required; a route is the combination of `OriginAirportKey` and `DestinationAirportKey`.
-
-### Fact grain
-
-One row in `fact.Flights` represents one scheduled flight occurrence on a specific date, operated by a specific airline, between a specific origin and destination airport, at a specific scheduled departure time.
-
-Logical uniqueness is defined as:
+### Dimensions
 
 ```text
-FlightDate
-+ DOTAirlineID
+dim.Date
+dim.Airline
+dim.Airport
+```
+
+### Fact table
+
+```text
+fact.Flights
+```
+
+Conceptually:
+
+```text
+                    dim.Date
+                       │
+                       │
+                       ▼
+dim.Airline ─────► fact.Flights ◄───── dim.Airport
+                                      ▲           ▲
+                                      │           │
+                                   Origin    Destination
+```
+
+## Dimension Tables
+
+### `dim.Date`
+
+Contains one row per calendar date.
+
+For the current 2025 dataset:
+
+```text
+365 rows
+2025-01-01 → 2025-12-31
+```
+
+Attributes include:
+
+- Year
+- Quarter
+- Quarter Name
+- Month
+- Month Name
+- Year-Month
+- Day of Month
+- Day of Week
+- Day Name
+- Weekend flag
+
+`DateKey` uses the `YYYYMMDD` warehouse key format.
+
+Example:
+
+```text
+2025-01-01 → 20250101
+```
+
+### `dim.Airline`
+
+Contains one row per DOT airline.
+
+Current dimension size:
+
+```text
+14 airlines
+```
+
+Business key:
+
+```text
+DOTAirlineID
+```
+
+Surrogate key:
+
+```text
+AirlineKey
+```
+
+### `dim.Airport`
+
+Contains one row per airport.
+
+Current dimension size:
+
+```text
+352 airports
+```
+
+Business key:
+
+```text
+AirportID
+```
+
+Surrogate key:
+
+```text
+AirportKey
+```
+
+`dim.Airport` is a role-playing dimension.
+
+`fact.Flights` references the same airport dimension twice:
+
+```text
+OriginAirportKey
+DestinationAirportKey
+```
+
+A separate Route dimension is not required.
+
+A route is represented by:
+
+```text
+OriginAirportKey + DestinationAirportKey
+```
+
+## Fact Table
+
+The central analytical table is:
+
+```text
+fact.Flights
+```
+
+The current fact table contains:
+
+```text
+7,001,619 flight records
+```
+
+### Fact Grain
+
+One row represents one scheduled flight occurrence:
+
+```text
+Flight Date
++ Airline
++ Flight Number
++ Origin Airport
++ Destination Airport
++ Scheduled Departure Time
+```
+
+The original business-key definition is:
+
+```text
+FL_DATE
++ OP_CARRIER_AIRLINE_ID
++ OP_CARRIER_FL_NUM
++ ORIGIN_AIRPORT_ID
++ DEST_AIRPORT_ID
++ CRS_DEP_TIME
+```
+
+The warehouse uniqueness constraint is implemented using:
+
+```text
+DateKey
++ AirlineKey
 + FlightNumber
-+ OriginAirportID
-+ DestinationAirportID
++ OriginAirportKey
++ DestinationAirportKey
 + ScheduledDepTime
 ```
 
-`fact.Flights` uses `FlightKey` as a surrogate primary key.
+This grain was validated across the complete 2025 dataset and no duplicate grain combinations were found.
+
+### Surrogate Key
+
+Each fact row receives:
+
+```text
+FlightKey
+```
+
+as a `BIGINT IDENTITY` surrogate primary key.
+
+### Fact Measures
+
+The fact table includes measures such as:
+
+- Departure delay minutes
+- Arrival delay minutes
+- Non-negative departure delay
+- Non-negative arrival delay
+- Taxi-out time
+- Taxi-in time
+- Scheduled elapsed time
+- Actual elapsed time
+- Air time
+- Flight distance
+- Carrier delay
+- Weather delay
+- NAS delay
+- Security delay
+- Late aircraft delay
+- Diversion measures
+
+It also contains flight-level status flags including:
+
+- Cancellation
+- Diversion
+- Departure delay of 15+ minutes
+- Arrival delay of 15+ minutes
 
 ## Repository Structure
 
 ```text
 Flight-Reliability-Intelligence/
-├── data/raw/bts/
-│   ├── description/          BTS field documentation
-│   └── 2025/                 Monthly On-Time Performance extracts
+│
+├── data/
+│   ├── raw/
+│   │   └── bts/
+│   │       ├── description/
+│   │       └── 2025/
+│   │           ├── 2025_01.csv
+│   │           ├── ...
+│   │           └── 2025_12.csv
+│   │
+│   └── processed/
+│       ├── 2025_01_clean.csv
+│       ├── ...
+│       └── 2025_12_clean.csv
+│
+├── python/
+│   └── etl_flights.py
+│
+├── notebooks/
+│
 ├── sql/
 │   ├── 01_Create_Database_And_Schemas.sql
 │   ├── 02_Create_Staging_Layer.sql
-│   ├── 03_Load_Raw_Data.sql
+│   ├── 03_Load_Staging_Data.sql
 │   ├── 04_Create_Dimensional_Model.sql
 │   ├── 05_Load_Dimensions.sql
 │   ├── 06_Load_FactFlights.sql
 │   ├── 07_Data_Validation.sql
-│   └── analytics/            Analytical views and reporting SQL
-├── notebooks/                Exploratory and validation notebooks
-├── powerbi/                  Power BI reports and semantic models
-├── docs/                     Architecture notes, findings, and supporting documents
+│   └── analytics/
+│
+├── powerbi/
+│
+├── docs/
+│
 ├── README.md
 └── .gitignore
 ```
 
-SQL scripts are maintained in this repository and executed against a real SQL Server database.
-
-## Data Source
-
-Primary source: U.S. Bureau of Transportation Statistics, Airline On-Time Performance data.
-
-Monthly files are stored locally as:
-
-```text
-data/raw/bts/2025/2025_01.csv
-...
-data/raw/bts/2025/2025_12.csv
-```
-
-These extracts are large and are not committed to git. Official BTS field documentation is stored in `data/raw/bts/description/`.
-
-FAA airport data and NOAA historical weather data may be added later.
+Large source and processed datasets are excluded from Git.
 
 ## SQL Script Order
+
+SQL scripts are executed in the following order:
 
 ```text
 01_Create_Database_And_Schemas.sql
         ↓
 02_Create_Staging_Layer.sql
         ↓
-03_Load_Raw_Data.sql
+03_Load_Staging_Data.sql
         ↓
 04_Create_Dimensional_Model.sql
         ↓
@@ -137,34 +475,249 @@ FAA airport data and NOAA historical weather data may be added later.
 07_Data_Validation.sql
 ```
 
-1. `01_Create_Database_And_Schemas.sql` — create the database and the `raw`, `staging`, `dim`, `fact`, and `analytics` schemas
-2. `02_Create_Staging_Layer.sql` — create `raw.OnTimePerformance`, `staging.Flights`, `staging.ConvertHhmmToTime`, and `staging.LoadFlightsFromRaw`; do not load CSV files
-3. `03_Load_Raw_Data.sql` — truncate and load the 12 monthly 2025 BTS CSV files, execute `staging.LoadFlightsFromRaw`, and validate raw and staging row counts
-4. `04_Create_Dimensional_Model.sql` — create `dim.Date`, `dim.Airline`, `dim.Airport`, and `fact.Flights` with keys, constraints, and indexes
-5. `05_Load_Dimensions.sql` — populate `dim.Date`, `dim.Airline`, and `dim.Airport`, preserving surrogate keys across reloads
-6. `06_Load_FactFlights.sql` — populate `fact.Flights` from staging and resolve dimension keys
-7. `07_Data_Validation.sql` — validate the dimensional model and fact table after load
+### `01_Create_Database_And_Schemas.sql`
 
-## Data Flow
+Creates:
 
 ```text
-BTS CSV files
+FlightReliabilityIntelligence
+```
+
+and the schemas:
+
+```text
+staging
+dim
+fact
+analytics
+```
+
+### `02_Create_Staging_Layer.sql`
+
+Creates the 12 monthly staging tables:
+
+```text
+staging.Flights_2025_01
+...
+staging.Flights_2025_12
+```
+
+All monthly tables use the same structure.
+
+### `03_Load_Staging_Data.sql`
+
+Loads the 12 cleaned CSV files produced by Python into their matching staging tables using SQL Server bulk loading.
+
+The script also validates:
+
+- Row counts
+- Minimum flight date
+- Maximum flight date
+- Expected calendar month
+- Expected calendar year
+
+### `04_Create_Dimensional_Model.sql`
+
+Creates:
+
+```text
+dim.Date
+dim.Airline
+dim.Airport
+fact.Flights
+```
+
+including:
+
+- Primary keys
+- Surrogate keys
+- Foreign keys
+- Uniqueness constraints
+- Analytical indexes
+
+### `05_Load_Dimensions.sql`
+
+Populates:
+
+```text
+dim.Date
+dim.Airline
+dim.Airport
+```
+
+Surrogate keys are generated for airlines and airports.
+
+The airport dimension is populated from both origin and destination airport data.
+
+### `06_Load_FactFlights.sql`
+
+Loads all 12 monthly staging datasets into:
+
+```text
+fact.Flights
+```
+
+During the load, the script resolves:
+
+```text
+FL_DATE
+→ DateKey
+
+OP_CARRIER_AIRLINE_ID
+→ AirlineKey
+
+ORIGIN_AIRPORT_ID
+→ OriginAirportKey
+
+DEST_AIRPORT_ID
+→ DestinationAirportKey
+```
+
+The script validates all dimension lookups before loading the fact table.
+
+### `07_Data_Validation.sql`
+
+Runs final Data Warehouse validation.
+
+Checks include:
+
+- Staging row count vs. fact row count
+- Dimension business-key uniqueness
+- Fact grain uniqueness
+- Referential integrity
+- Required field NULL validation
+- Date coverage
+- Monthly staging-to-fact reconciliation
+- Flight date range validation
+
+The script does not modify project data.
+
+## Final SQL Validation Results
+
+The complete 2025 dataset passed the final SQL validation process.
+
+### Row reconciliation
+
+```text
+Staging rows: 7,001,619
+Fact rows:    7,001,619
+Difference:   0
+```
+
+### Dimension sizes
+
+```text
+dim.Date:     365
+dim.Airline:   14
+dim.Airport:  352
+```
+
+### Referential integrity
+
+```text
+Missing Date Keys:                0
+Missing Airline Keys:             0
+Missing Origin Airport Keys:      0
+Missing Destination Airport Keys: 0
+```
+
+### Grain validation
+
+```text
+Duplicate fact-grain records: 0
+```
+
+### Date coverage
+
+```text
+Minimum Flight Date: 2025-01-01
+Maximum Flight Date: 2025-12-31
+```
+
+### Flight status summary
+
+```text
+Total Flights:                 7,001,619
+Cancelled Flights:               102,876
+Diverted Flights:                 19,258
+Departure Delayed 15+ Flights: 1,501,825
+Arrival Delayed 15+ Flights:   1,534,638
+```
+
+The SQL Data Warehouse is therefore validated and ready for the Power BI stage.
+
+## End-to-End Data Flow
+
+```text
+BTS Monthly CSV Files
         ↓
-raw.OnTimePerformance
+Python ETL
         ↓
-staging.LoadFlightsFromRaw
+12 Cleaned Monthly CSV Files
         ↓
-staging.Flights
+12 SQL Server Staging Tables
         ↓
-dim.Date / dim.Airline / dim.Airport
+dim.Date
+dim.Airline
+dim.Airport
         ↓
 fact.Flights
         ↓
-Data Validation
+SQL Data Validation
+        ↓
+Power BI
 ```
 
-## Long-Term Analytical Goal
+## Power BI Analytical Goal
 
-Power BI should support analysis by airline, origin airport, destination airport, route, date, month, day of week, departure time, delay type, cancellation status, and diversion status.
+Power BI will support analysis by:
 
-A later iteration may add a custom Flight Reliability Score using on-time rate, average delay, severe delay rate, cancellation rate, and delay variability.
+- Airline
+- Origin airport
+- Destination airport
+- Route
+- Date
+- Month
+- Day of week
+- Departure time
+- Arrival time
+- Delay status
+- Delay cause
+- Cancellation status
+- Diversion status
+
+Planned analytical measures include:
+
+- Total flights
+- On-time flights
+- On-time rate
+- Average departure delay
+- Average arrival delay
+- 15+ minute delay rate
+- Cancellation rate
+- Diversion rate
+- Delay cause contribution
+- Airline reliability
+- Airport reliability
+- Route reliability
+
+A later iteration may introduce a custom **Flight Reliability Score** combining metrics such as:
+
+- On-time rate
+- Average delay
+- Severe delay rate
+- Cancellation rate
+- Delay variability
+
+## Current Project Status
+
+```text
+BTS Data Acquisition       ✓
+Python ETL                 ✓
+SQL Staging Layer          ✓
+Dimensional Model          ✓
+Dimension Loading          ✓
+Fact Loading               ✓
+SQL Data Validation        ✓
+Power BI                   In Progress
+```
