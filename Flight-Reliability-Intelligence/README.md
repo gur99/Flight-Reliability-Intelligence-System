@@ -2,7 +2,7 @@
 
 End-to-end Data Analytics portfolio project for U.S. flight reliability, built with Python, SQL Server, and Power BI.
 
-The system analyzes airlines, airports, routes, dates, and flight schedules to identify patterns in delays, on-time performance, cancellations, diversions, delay causes, and airline / airport / route reliability.
+The system analyzes airlines, airports, routes, dates, and flight schedules to identify patterns in delays, on-time performance, cancellations, diversions, and airline / airport / route reliability.
 
 ## Objective
 
@@ -115,28 +115,81 @@ The original BTS data is retained in the file system, while Python performs the 
 
 ## Data Source
 
-Primary source:
+The project uses official U.S. flight-level data from the **U.S. Bureau of Transportation Statistics (BTS)**.
 
-**U.S. Bureau of Transportation Statistics (BTS) - Airline On-Time Performance Data**
+- **Dataset:** Airline On-Time Performance Data
+- **Period:** January 2025 - December 2025
+- **Processed flight records:** 7,001,619
+- **Raw and processed full-size datasets are intentionally excluded from GitHub because of their size.**
+- The repository contains the ETL and SQL pipeline required to reproduce the analytical dataset from the official source.
 
-The project uses the complete 2025 calendar year.
+[View the official BTS data source](https://www.bts.gov/browse-statistical-products-and-data/bts-publications/airline-service-quality-performance-234-time)
 
-Original monthly source files:
+## Sample Data
+
+The complete 2025 dataset contains more than 7 million flight records and is intentionally not stored in this repository because of its size.
+
+To make the project easier to inspect, the repository includes a representative sample of the processed flight data:
+
+[`data/samples/flights_2025_sample.csv`](data/samples/flights_2025_sample.csv)
+
+The sample contains approximately 10,000 records selected from the cleaned 2025 monthly datasets and demonstrates the structure and content of the data used by the SQL Server and Power BI layers.
+
+The full analytical dataset can be reproduced from the official BTS source files using the Python ETL pipeline included in this repository.
+
+## Reference Data
+
+The repository also includes small reference / mapping datasets used to translate technical codes into business-friendly labels for analysis and reporting.
+
+These reference files support mappings such as:
+
+- Airline carrier code → airline name
+- Airport code → airport descriptive information
+
+Because these files are small and help make the analytical model easier to understand and reproduce, they are intended to remain version-controlled in the repository.
+
+Reference files are stored under:
 
 ```text
-data/raw/bts/2025/2025_01.csv
-data/raw/bts/2025/2025_02.csv
-...
-data/raw/bts/2025/2025_12.csv
+data/reference/
 ```
 
-The source files are large and are not committed to Git.
+Unlike the full raw and processed flight datasets, these mapping files are suitable for GitHub and provide useful context for the SQL and Power BI reporting layers.
+## Development Notebooks
 
-Official BTS field documentation is stored under:
+The repository includes three Jupyter notebooks that document the main development and validation stages of the Python workflow.
+
+### `01_extract_bts_2025.ipynb`
+
+Extract-stage notebook used to locate and verify the 12 monthly BTS files for 2025, confirm that their column structures are compatible, load the monthly files, combine them into a single yearly DataFrame, and validate the resulting row counts, year coverage, and month coverage before export.
+
+This notebook intentionally avoids cleaning or transforming the data so that extraction and transformation remain separate stages.
+
+### `02_data_quality_and_cleaning.ipynb`
+
+Transform-stage notebook used for data profiling, quality checks, type decisions, and approved cleaning steps.
+
+The notebook follows the workflow:
 
 ```text
-data/raw/bts/description/
+Inspect → Identify → Understand → Decide → Transform → Validate
 ```
+
+It rebuilds the yearly dataset from the 12 monthly source files, inspects the data before modification, applies the approved transformations such as date and BTS HHMM time conversion, validates the results, and exports the 12 cleaned monthly files used by SQL Server.
+
+### `03_VALIDATION_NOTEBOOK.IPYNB`
+
+Lightweight validation and utility notebook used after the processed files were created.
+
+It is used to inspect the cleaned output, verify selected exported values and data representation, and generate the repository sample dataset from all 12 processed monthly files.
+
+The sample is written to:
+
+```text
+data/samples/flights_2025_sample.csv
+```
+
+This notebook is intentionally small because the main production transformation logic is implemented in the ETL script and the second notebook.
 
 ## Python ETL
 
@@ -434,6 +487,9 @@ Flight-Reliability-Intelligence/
 │   └── etl_flights.py
 │
 ├── notebooks/
+│   ├── 01_extract_bts_2025.ipynb
+│   ├── 02_data_quality_and_cleaning.ipynb
+│   └── 03_VALIDATION_NOTEBOOK.IPYNB
 │
 ├── sql/
 │   ├── 01_Create_Database_And_Schemas.sql
@@ -446,8 +502,15 @@ Flight-Reliability-Intelligence/
 │   └── analytics/
 │
 ├── powerbi/
+│   └── README.md
 │
 ├── docs/
+│   └── powerbi/
+│       └── screenshots/
+│           ├── 01_executive_overview.png
+│           ├── 02_airline_performance.png
+│           ├── 03_airport_route_analysis.png
+│           └── 04_operational_performance.png
 │
 ├── README.md
 └── .gitignore
@@ -668,46 +731,361 @@ SQL Data Validation
 Power BI
 ```
 
-## Power BI Analytical Goal
+## Power BI Reporting Layer
 
-Power BI will support analysis by:
+The Power BI stage is complete and serves as the final analytical presentation layer of the project.
 
-- Airline
-- Origin airport
-- Destination airport
-- Route
-- Date
-- Month
-- Day of week
-- Departure time
-- Arrival time
-- Delay status
-- Delay cause
-- Cancellation status
-- Diversion status
+The report connects the validated SQL Server dimensional model to an interactive semantic model, reusable DAX measures, KPI cards, slicers, ranking logic, conditional formatting, and four focused report pages.
 
-Planned analytical measures include:
+### Power BI semantic model
 
-- Total flights
-- On-time flights
-- On-time rate
-- Average departure delay
-- Average arrival delay
-- 15+ minute delay rate
-- Cancellation rate
-- Diversion rate
-- Delay cause contribution
-- Airline reliability
-- Airport reliability
-- Route reliability
+The SQL model is consumed as a star schema centered on:
 
-A later iteration may introduce a custom **Flight Reliability Score** combining metrics such as:
+```text
+fact Flights
+```
 
-- On-time rate
-- Average delay
-- Severe delay rate
-- Cancellation rate
-- Delay variability
+with the main reporting dimensions:
+
+```text
+dim Date
+dim Airline
+dim Origin Airport
+dim Destination Airport
+```
+
+The airport model required special handling because every flight has two airport roles: origin and destination.
+
+The original SQL warehouse stores a single role-playing `dim.Airport`. In Power BI, that source was referenced twice to create two logical reporting dimensions:
+
+```text
+dim Origin Airport
+dim Destination Airport
+```
+
+This allows both airport relationships to remain active and makes filters such as **Origin State** and **Destination State** straightforward for report users.
+
+The date dimension was also marked as the model's official Date Table, and month names were sorted by the numeric month column to preserve chronological order in time-series visuals.
+
+### Core DAX measures
+
+Reusable measures were created for the main reliability KPIs, including:
+
+```text
+Total Flights
+On-Time Flights
+On-Time Rate
+Cancelled Flights
+Cancellation Rate
+Diverted Flights
+Diversion Rate
+Departure Delayed 15+ Flights
+Arrival Delayed 15+ Flights
+Departure Delay Rate
+Arrival Delay Rate
+Average Departure Delay
+Average Arrival Delay
+```
+
+For this report, an on-time flight is defined as a flight that:
+
+```text
+was not cancelled
+AND was not diverted
+AND arrived less than 15 minutes late
+```
+
+Measures are evaluated dynamically under Power BI filter context, so the same KPI logic responds to selections such as airline, month, origin state, and destination state.
+
+### Measure organization
+
+Business measures are kept separate from presentation logic.
+
+A dedicated formatting-measures table is used for helper calculations such as:
+
+```text
+Dynamic colors
+Trend colors
+Conditional-formatting logic
+Dynamic labels
+```
+
+This keeps analytical calculations easier to maintain and prevents formatting-specific DAX from cluttering the main KPI measure table.
+
+### Conditional formatting
+
+The airline and airport matrices use targeted conditional formatting rather than coloring every cell.
+
+Examples:
+
+```text
+On-Time Rate
+Highest → Green
+Lowest  → Red
+
+Cancellation Rate
+Lowest  → Green
+Highest → Red
+
+Average Arrival Delay
+Lowest  → Green
+Highest → Red
+```
+
+The formatting measures use `ALLSELECTED()` so the minimum and maximum values are calculated across the currently visible population while still respecting report slicers.
+
+### Dynamic 2025 vs 2024 benchmark
+
+The Executive Overview contains a 2025 On-Time Rate comparison against a 2024 benchmark.
+
+A specific UX safeguard was added: the prior-year comparison is shown only in the unfiltered overall view.
+
+If the user filters by month, airline, origin state, or destination state, the comparison returns `BLANK()`.
+
+This prevents an overall 2024 value from being presented as if it were a like-for-like comparison against a filtered 2025 subset.
+
+### Route analysis
+
+A report-level Route field was created by combining origin and destination airport codes:
+
+```text
+LAX → SFO
+JFK → LAX
+HNL → OGG
+```
+
+This supports route-level analysis without introducing a separate route dimension into the warehouse.
+
+During development, direct ranking by On-Time Rate exposed an important sample-size issue: low-volume routes can easily achieve `100%` on-time performance.
+
+The final report therefore evaluates the **busiest routes first** and then compares their On-Time Rate. This produces a more meaningful operational comparison than ranking tiny routes only by percentage.
+
+### Top-N and tie handling
+
+Power BI's standard `Top N` filter can return more than N categories when several categories share the boundary value.
+
+This occurred during route analysis when multiple routes had identical On-Time Rates.
+
+The report design addresses this by:
+
+- using traffic volume to define the routes being compared,
+- avoiding percentage-only rankings where tiny samples dominate,
+- and using DAX ranking / secondary tie-break logic when an exact ordered subset is required.
+
+---
+
+## Final Power BI Report
+
+The final report contains four pages. Each page answers a different analytical question and the report intentionally avoids unnecessary page count.
+
+### 1. Flight Reliability Dashboard | 2025
+
+Executive overview of the complete 2025 network.
+
+Main KPIs:
+
+```text
+Total Flights
+On-Time Rate
+Cancellation Rate
+Departure Delay Rate
+Arrival Delay Rate
+Average Arrival Delay
+```
+
+Main visuals:
+
+- Monthly On-Time Performance
+- Airline On-Time Performance
+- Top 10 Origin Airports by Flight Volume
+
+The full-year report currently summarizes:
+
+```text
+Total Flights:          7,001,619
+On-Time Rate:              76.34%
+Cancellation Rate:          1.47%
+Departure Delay Rate:      21.45%
+Arrival Delay Rate:        21.92%
+Average Arrival Delay:   8.50 min
+```
+
+![Flight Reliability Dashboard - Executive Overview](docs/powerbi/screenshots/01_executive_overview.png)
+
+### 2. Airline Performance
+
+Carrier-level comparison of reliability, delay, cancellation, and operating scale.
+
+Main visuals:
+
+- Airline On-Time Performance
+- Average Arrival Delay by Airline
+- Monthly On-Time Rate
+- On-Time Rate vs Cancellation Rate bubble chart
+- Airline Performance Matrix
+
+The scatter visualization combines:
+
+```text
+X-axis      → On-Time Rate
+Y-axis      → Cancellation Rate
+Bubble size → Total Flights
+Category    → Airline
+```
+
+![Airline Performance](docs/powerbi/screenshots/02_airline_performance.png)
+
+### 3. Airport & Route Analysis
+
+Airport traffic and route-reliability analysis.
+
+Main visuals:
+
+- Top 10 Origin Airports by Flight Volume
+- Top 10 Origin Airports by Average Arrival Delay
+- On-Time Rate of Top 10 Busiest Routes
+- Top 25 Origin Airports performance matrix
+
+The route visual deliberately evaluates high-volume routes rather than simply ranking the highest percentages, reducing the impact of very small samples.
+
+![Airport and Route Analysis](docs/powerbi/screenshots/03_airport_route_analysis.png)
+
+### 4. Operational Performance
+
+Operational monitoring of disruptions across the year.
+
+Main KPIs:
+
+```text
+Diversion Rate
+Average Arrival Delay
+Cancellation Rate
+Departure Delay Rate
+```
+
+Main visuals:
+
+- Monthly Diversion Rate
+- Diverted Flights by Airline
+- Monthly Delay Trend
+- Monthly Cancellation Rate
+
+The Monthly Delay Trend compares arrival and departure delay rates on the same timeline, making it easier to identify periods of broader operational deterioration.
+
+![Operational Performance](docs/powerbi/screenshots/04_operational_performance.png)
+
+---
+
+## Live Power BI Dashboard
+
+A published interactive version of the report can be linked here:
+
+**[Open the live Power BI dashboard](https://app.powerbi.com/groups/me/reports/92f5be97-358f-41f0-be5c-c1f336b4188f?ctid=0ff03880-4d75-4d76-889a-26760370fcd3&pbi_source=linkShare)**
+
+> Replace `https://app.powerbi.com/groups/me/reports/92f5be97-358f-41f0-be5c-c1f336b4188f?ctid=0ff03880-4d75-4d76-889a-26760370fcd3&pbi_source=linkShare` with the final Power BI **Publish to web** URL before publishing the repository.
+
+For implementation details specific to the Power BI layer, see:
+
+**[`powerbi/README.md`](powerbi/README.md)**
+
+---
+
+## Power BI Design Decisions
+
+Several visualization ideas were tested during development and intentionally changed when they did not improve analytical clarity.
+
+### Map visualization
+
+A geographic airport map was evaluated for the Airport & Route page.
+
+It was removed because ranked visuals and matrices provided clearer comparisons of airport performance and volume.
+
+### Dense airport scatter plot
+
+A scatter plot comparing airport traffic and delay was also tested.
+
+The distribution was highly compressed because many airports had low traffic while a small number of major airports dominated the scale. The visual was replaced with clearer ranked comparisons.
+
+### Report-page count
+
+The report was deliberately limited to four pages:
+
+```text
+Executive Overview
+Airline Performance
+Airport & Route Analysis
+Operational Performance
+```
+
+This keeps the report focused while still covering network-level, airline-level, airport/route-level, and operational analysis.
+
+---
+
+## Key Power BI Challenges Solved
+
+### Role-playing airport dimension
+
+**Challenge:** One airport dimension is referenced as both origin and destination.
+
+**Solution:** Create separate logical Origin Airport and Destination Airport dimensions in the Power BI model so both relationships remain active.
+
+### Slicer interaction
+
+**Challenge:** Early report visuals did not always respond to airline filtering as intended.
+
+**Solution:** Review the semantic relationships and visual interactions so dimensions correctly filter the flight fact table and the intended visuals.
+
+### Month ordering
+
+**Challenge:** Month labels can sort alphabetically.
+
+**Solution:** Sort `MonthName` by the numeric `Month` field.
+
+### Conditional-formatting context
+
+**Challenge:** Initial min/max color logic could evaluate each matrix row in its own context and incorrectly color every row as an extreme.
+
+**Solution:** Evaluate visible min/max values with `ALLSELECTED()` and `CALCULATE()` inside iterator functions.
+
+### Benchmark validity under filtering
+
+**Challenge:** An overall previous-year comparison becomes misleading when the current-year KPI is filtered to a specific airline, month, or state.
+
+**Solution:** Use `ISFILTERED()` to hide the comparison whenever the dashboard is no longer in the full unfiltered context.
+
+### Small-sample route rankings
+
+**Challenge:** Routes with very few flights could display 100% On-Time Rate and dominate percentage rankings.
+
+**Solution:** Base the final route comparison on the busiest routes, then analyze reliability within that meaningful population.
+
+---
+
+## End-to-End Data Flow
+
+```text
+BTS Monthly CSV Files
+        ↓
+Python ETL
+        ↓
+12 Cleaned Monthly CSV Files
+        ↓
+12 SQL Server Staging Tables
+        ↓
+dim.Date
+dim.Airline
+dim.Airport
+        ↓
+fact.Flights
+        ↓
+SQL Data Validation
+        ↓
+Power BI Semantic Model
+        ↓
+DAX Measures + Interactive Report
+        ↓
+4 Final Dashboard Pages
+```
 
 ## Current Project Status
 
@@ -719,5 +1097,10 @@ Dimensional Model          ✓
 Dimension Loading          ✓
 Fact Loading               ✓
 SQL Data Validation        ✓
-Power BI                   In Progress
+Power BI Semantic Model    ✓
+DAX Measures               ✓
+Power BI Report            ✓
+Project Documentation      In Progress
 ```
+
+The core analytical pipeline and final Power BI report are complete. Remaining work is primarily repository packaging, documentation, screenshots, and final publication links.
